@@ -1,0 +1,17 @@
+# 开发环境
+.DS_Store
+node_modules/
+.idea/
+.vscode/
+
+# 构建输出
+dist/
+*.zip
+
+# 密钥和个人配置
+*.pem
+*.crx
+config.local.js
+
+# 日志
+*.log 

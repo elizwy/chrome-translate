@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            width: 400px;
+            padding: 15px;
+            font-family: Arial, sans-serif;
+        }
+        .config-section {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .config-title {
+            font-weight: bold;
+            color: #4285f4;
+            margin-bottom: 10px;
+        }
+        .config-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .config-item label {
+            margin-left: 8px;
+            color: #666;
+        }
+        .save-config {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .save-config:hover {
+            background: #3367d6;
+        }
+        .divider {
+            height: 1px;
+            background: #ddd;
+            margin: 20px 0;
+        }
+        .date-section {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .date-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .date-title {
+            font-weight: bold;
+            color: #4285f4;
+        }
+        .delete-btn {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .word-item {
+            margin: 5px 0;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .word {
+            font-weight: bold;
+            color: #333;
+        }
+        .translation {
+            color: #666;
+            margin-top: 3px;
+            font-size: 0.9em;
+        }
+        .definition {
+            color: #888;
+            margin-top: 3px;
+            font-size: 0.9em;
+            font-style: italic;
+        }
+        .no-words {
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+        .engine-config {
+            margin-top: 15px;
+        }
+        .engine-select {
+            width: 100%;
+            padding: 5px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .api-key-input {
+            width: 100%;
+            padding: 5px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .engine-note {
+            font-size: 12px;
+            color: #666;
+            margin: 5px 0;
+            font-style: italic;
+        }
+        .donate-section {
+            text-align: center;
+            padding: 10px;
+            margin-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        .donate-btn {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        .donate-btn:hover {
+            background: #3367d6;
+        }
+    </style>
+</head>
+<body>
+    <div class="config-section">
+        <div class="config-title">翻译设置</div>
+        <div class="config-item">
+            <input type="radio" name="displayOrder" id="zhFirst" value="zh-first">
+            <label for="zhFirst">中文释义在前，英文释义在后</label>
+        </div>
+        <div class="config-item">
+            <input type="radio" name="displayOrder" id="enFirst" value="en-first">
+            <label for="enFirst">英文释义在前，中文释义在后</label>
+        </div>
+        <div class="engine-config">
+            <div class="config-title">翻译引擎</div>
+            <select id="translationEngine" class="engine-select">
+                <option value="google">Google翻译 (免费)</option>
+                <option value="baidu">百度翻译 (需要API Key)</option>
+                <option value="youdao">有道翻译 (需要API Key)</option>
+            </select>
+            <div id="baiduConfig" style="display: none;">
+                <input type="text" id="baiduAppId" class="api-key-input" placeholder="百度翻译 AppID">
+                <input type="text" id="baiduKey" class="api-key-input" placeholder="百度翻译 密钥">
+                <div class="engine-note">
+                    请在百度翻译开放平台申请：https://api.fanyi.baidu.com
+                </div>
+            </div>
+            <div id="youdaoConfig" style="display: none;">
+                <input type="text" id="youdaoAppKey" class="api-key-input" placeholder="有道翻译 应用ID">
+                <input type="text" id="youdaoSecret" class="api-key-input" placeholder="有道翻译 应用密钥">
+                <div class="engine-note">
+                    请在有道智云平台申请：https://ai.youdao.com
+                </div>
+            </div>
+        </div>
+        <button class="save-config" id="saveConfig">保存设置</button>
+    </div>
+    <div class="divider"></div>
+    <div id="wordList"></div>
+    <div class="donate-section">
+        <button class="donate-btn" id="donateBtn">查看源码</button>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html> 
