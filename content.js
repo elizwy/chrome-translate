@@ -47,13 +47,20 @@ document.addEventListener('mouseup', function(e) {
         } else {
             if (e.target !== translateButton) {
                 translateButton.style.display = 'none';
+                clearLoadingPopup();
             }
         }
     }, 10);
 });
 
-// 创建加载提示
+// 修改显示loading提示的函数
 function showLoadingPopup() {
+    // 先清除可能存在的loading提示
+    if (loadingPopup) {
+        loadingPopup.remove();
+        loadingPopup = null;
+    }
+    
     loadingPopup = document.createElement('div');
     loadingPopup.style.cssText = `
         position: fixed;
@@ -70,15 +77,50 @@ function showLoadingPopup() {
     document.body.appendChild(loadingPopup);
 }
 
-// 检查单词是否已保存
+// 添加清除loading提示的函数
+function clearLoadingPopup() {
+    if (loadingPopup) {
+        loadingPopup.remove();
+        loadingPopup = null;
+    }
+}
+
+// 修改检查单词是否已保存的函数
 async function checkWordSaved(word) {
-    const { savedWords = {} } = await chrome.storage.local.get('savedWords');
-    const today = new Date().toISOString().split('T')[0];
-    
-    // 检查所有日期中是否存在该单词
-    return Object.values(savedWords).some(dayWords => 
-        dayWords.some(item => item.word === word)
-    );
+    try {
+        const { savedWords = {} } = await chrome.storage.local.get('savedWords');
+        
+        // 如果没有保存任何单词，直接返回false
+        if (!savedWords || Object.keys(savedWords).length === 0) {
+            return false;
+        }
+
+        // 遍历所有日期
+        for (const dateWords of Object.values(savedWords)) {
+            // 确保dateWords是一个对象
+            if (!dateWords || typeof dateWords !== 'object') {
+                continue;
+            }
+
+            // 遍历该日期下的所有页面
+            for (const pageData of Object.values(dateWords)) {
+                // 确保pageData和words数组存在
+                if (!pageData || !pageData.words || !Array.isArray(pageData.words)) {
+                    continue;
+                }
+
+                // 检查单词是否存在
+                if (pageData.words.some(item => item && item.word === word)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('检查单词保存状态失败:', error);
+        return false;
+    }
 }
 
 // 显示翻译结果
@@ -97,10 +139,10 @@ async function showTranslation(chineseTranslation, englishDefinition) {
     const popup = document.createElement('div');
     popup.classList.add('translation-popup');
     
-    // 计算弹窗位置
-    const buttonRect = translateButton.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
+    // 获取选中文本的位置
+    const selection = window.getSelection();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
     
     // 初始样式设置
     popup.style.cssText = `
@@ -115,22 +157,31 @@ async function showTranslation(chineseTranslation, englishDefinition) {
         font-size: 14px;
     `;
     
-    // 先添加到文档以获��实际尺寸
+    // 先添加到文档以获取实际尺寸
     document.body.appendChild(popup);
     const popupRect = popup.getBoundingClientRect();
     
-    // 计算最终位置
-    let left = buttonRect.left;
-    let top = buttonRect.top - popupRect.height - 5;
+    // 计算最佳位置
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    
+    // 默认显示在选中文本的下方
+    let left = rect.left;
+    let top = rect.bottom + window.scrollY + 5; // 在选中文本下方5px处
     
     // 如果弹窗会超出右边界，向左偏移
     if (left + popupRect.width > viewportWidth) {
         left = viewportWidth - popupRect.width - 10;
     }
     
-    // 如果弹窗会超出上边界，显示在按钮下方
-    if (top < 0) {
-        top = buttonRect.bottom + 5;
+    // 如果弹窗会超出下边界，显示在选中文本上方
+    if (top + popupRect.height > window.scrollY + viewportHeight) {
+        top = rect.top + window.scrollY - popupRect.height - 5;
+    }
+    
+    // 确保不会超出左边界
+    if (left < 0) {
+        left = 10;
     }
     
     // 应用计算后的位置
@@ -240,18 +291,28 @@ async function showTranslation(chineseTranslation, englishDefinition) {
     if (!isWordSaved) {
         saveButton.onclick = async () => {
             const today = new Date().toISOString().split('T')[0];
+            const pageUrl = window.location.href;
+            const pageTitle = document.title;
             
             try {
                 const { savedWords = {} } = await chrome.storage.local.get('savedWords');
                 
                 if (!savedWords[today]) {
-                    savedWords[today] = [];
+                    savedWords[today] = {};
                 }
                 
-                const isDuplicate = savedWords[today].some(item => item.word === selectedText);
+                // 使用URL作为key来分组
+                if (!savedWords[today][pageUrl]) {
+                    savedWords[today][pageUrl] = {
+                        title: pageTitle,
+                        words: []
+                    };
+                }
+                
+                const isDuplicate = savedWords[today][pageUrl].words.some(item => item.word === selectedText);
                 
                 if (!isDuplicate) {
-                    savedWords[today].push({
+                    savedWords[today][pageUrl].words.push({
                         word: selectedText,
                         translation: chineseTranslation,
                         definition: englishDefinition.definition,
@@ -265,7 +326,6 @@ async function showTranslation(chineseTranslation, englishDefinition) {
                     saveButton.disabled = true;
                     saveButton.style.cursor = 'default';
 
-                    // 保存成功后延迟1秒关闭
                     setTimeout(() => {
                         if (currentPopup) {
                             currentPopup.remove();
@@ -312,140 +372,186 @@ async function showTranslation(chineseTranslation, englishDefinition) {
     });
 }
 
-// 修改获取英文释义函数，通过background script发送请求
+// 修改翻译函数，添加错误处理和重试机制
+async function translateText(text) {
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+        try {
+            const { 
+                translationEngine = 'google',
+                baiduConfig,
+                youdaoConfig
+            } = await chrome.storage.local.get(['translationEngine', 'baiduConfig', 'youdaoConfig']);
+
+            let url;
+            let params = null;
+            
+            switch (translationEngine) {
+                case 'baidu':
+                    if (baiduConfig?.appId && baiduConfig?.key) {
+                        const salt = Date.now();
+                        const str = baiduConfig.appId + text + salt + baiduConfig.key;
+                        const sign = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+                            .then(buffer => Array.from(new Uint8Array(buffer))
+                                .map(b => b.toString(16).padStart(2, '0'))
+                                .join(''));
+
+                        url = 'https://fanyi-api.baidu.com/api/trans/vip/translate';
+                        params = `q=${encodeURIComponent(text)}&from=auto&to=zh&appid=${baiduConfig.appId}&salt=${salt}&sign=${sign}`;
+                        break;
+                    }
+                    // 继续执行默认的Google翻译
+                    
+                case 'youdao':
+                    if (youdaoConfig?.appKey && youdaoConfig?.secret) {
+                        // ... 有道翻译的配置 ...
+                        break;
+                    }
+                    // 继续执行默认的Google翻译
+                    
+                default:
+                    url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`;
+            }
+
+            const response = await chrome.runtime.sendMessage({
+                action: 'translate',
+                url: url,
+                params: params
+            });
+
+            if (!response?.success) {
+                throw new Error('翻译请求失败');
+            }
+
+            if (translationEngine === 'baidu' && response.data?.trans_result?.[0]?.dst) {
+                return response.data.trans_result[0].dst;
+            } else if (translationEngine === 'youdao' && response.data?.translation?.[0]) {
+                return response.data.translation[0];
+            } else if (response.data?.[0]?.[0]?.[0]) {
+                return response.data[0][0][0];
+            }
+            
+            throw new Error('无法解析翻译结果');
+            
+        } catch (error) {
+            console.error(`翻译失败 (尝试 ${retryCount + 1}/${maxRetries}):`, error);
+            retryCount++;
+            
+            if (retryCount === maxRetries) {
+                return '翻译失败，请重试';
+            }
+            
+            // 等待一段时间后重试
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+    }
+}
+
+// 修改获取英文释义函数，添加错误处理和重试机制
 async function getEnglishDefinition(text) {
-    try {
-        const response = await chrome.runtime.sendMessage({
-            action: 'fetchDefinition',
-            url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(text)}`
-        });
-        
-        if (response.success && response.data) {
-            const data = response.data;
-            if (data && data[0] && data[0].meanings && data[0].meanings[0]) {
-                const meaning = data[0].meanings[0];
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'fetchDefinition',
+                url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(text)}`
+            });
+            
+            if (!response?.success) {
+                throw new Error('获取释义请求失败');
+            }
+
+            if (response.data?.[0]?.meanings?.[0]) {
+                const meaning = response.data[0].meanings[0];
                 const definition = meaning.definitions[0];
                 
                 return {
                     definition: definition.definition,
                     partOfSpeech: meaning.partOfSpeech,
                     example: definition.example || null,
-                    source: data[0].sourceUrls && data[0].sourceUrls[0] 
-                        ? new URL(data[0].sourceUrls[0]).hostname
+                    source: response.data[0].sourceUrls?.[0]
+                        ? new URL(response.data[0].sourceUrls[0]).hostname
                         : 'Free Dictionary API'
                 };
             }
-        }
-        return {
-            definition: '未找到英文释义',
-            partOfSpeech: null,
-            example: null,
-            source: 'N/A'
-        };
-    } catch (error) {
-        console.error('获取英文释义失败:', error);
-        return {
-            definition: '获取英文释义失败',
-            partOfSpeech: null,
-            example: null,
-            source: 'Error'
-        };
-    }
-}
-
-// 修改翻译函数，通过background script发送请求
-async function translateText(text) {
-    const { 
-        translationEngine = 'google',
-        baiduConfig,
-        youdaoConfig
-    } = await chrome.storage.local.get(['translationEngine', 'baiduConfig', 'youdaoConfig']);
-
-    try {
-        let url;
-        let params;
-        
-        switch (translationEngine) {
-            case 'baidu':
-                if (baiduConfig && baiduConfig.appId && baiduConfig.key) {
-                    const salt = new Date().getTime();
-                    const str = baiduConfig.appId + text + salt + baiduConfig.key;
-                    const sign = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
-                        .then(buffer => Array.from(new Uint8Array(buffer))
-                            .map(b => b.toString(16).padStart(2, '0'))
-                            .join(''));
-
-                    url = `https://fanyi-api.baidu.com/api/trans/vip/translate?q=${encodeURIComponent(text)}&from=en&to=zh&appid=${baiduConfig.appId}&salt=${salt}&sign=${sign}`;
-                    break;
-                }
-                console.warn('未配置百度翻译API，使用Google翻译');
-                // 继续执行默认的Google翻译
-                
-            case 'youdao':
-                if (youdaoConfig && youdaoConfig.appKey && youdaoConfig.secret) {
-                    // ... 有道翻译的配置 ...
-                    break;
-                }
-                console.warn('未配置有道翻译API，使用Google翻译');
-                // 继续执行默认的Google翻译
-                
-            default:
-                url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`;
-        }
-
-        const response = await chrome.runtime.sendMessage({
-            action: 'translate',
-            url: url,
-            params: params
-        });
-
-        if (response.success) {
-            if (translationEngine === 'baidu' && response.data.trans_result) {
-                return response.data.trans_result[0].dst;
-            } else if (translationEngine === 'youdao' && response.data.translation) {
-                return response.data.translation[0];
-            } else {
-                // Google翻译
-                return response.data[0][0][0];
+            
+            return {
+                definition: '未找到英文释义',
+                partOfSpeech: null,
+                example: null,
+                source: 'N/A'
+            };
+            
+        } catch (error) {
+            console.error(`获取释义失败 (尝试 ${retryCount + 1}/${maxRetries}):`, error);
+            retryCount++;
+            
+            if (retryCount === maxRetries) {
+                return {
+                    definition: '获取英文释义失败',
+                    partOfSpeech: null,
+                    example: null,
+                    source: 'Error'
+                };
             }
+            
+            // 等待一段时间后重试
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }
-        throw new Error('翻译失败');
-    } catch (error) {
-        console.error('翻译失败:', error);
-        return '翻译失败';
     }
 }
 
-// 鼠标移入翻译按钮时发翻译
-translateButton.addEventListener('mouseenter', () => {
+// 添加hover时自动翻译的功能
+translateButton.addEventListener('mouseenter', async () => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
-        // 清除之前的定时器
-        if (translateTimeout) {
-            clearTimeout(translateTimeout);
-            translateTimeout = null;
-        }
         showLoadingPopup();
         
-        // 开始翻译
-        translateTimeout = setTimeout(async () => {
+        try {
             const [chineseTranslation, englishDefinition] = await Promise.all([
                 translateText(selectedText),
                 getEnglishDefinition(selectedText)
             ]);
             showTranslation(chineseTranslation, englishDefinition);
-        }, 100);
+        } catch (error) {
+            console.error('翻译失败:', error);
+            if (loadingPopup) {
+                loadingPopup.remove();
+                loadingPopup = null;
+            }
+            // 显示错误提示
+            const errorPopup = document.createElement('div');
+            errorPopup.style.cssText = `
+                position: fixed;
+                left: ${translateButton.style.left};
+                top: ${translateButton.style.top};
+                transform: translateY(-100%);
+                background: white;
+                padding: 10px;
+                border-radius: 4px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                z-index: 1000000;
+                color: #ff4444;
+            `;
+            errorPopup.textContent = '翻译失败，请重试';
+            document.body.appendChild(errorPopup);
+            setTimeout(() => errorPopup.remove(), 2000);
+        }
     }
 });
+
+// 移除原有的点击事件监听器，因为现在hover就会翻译
+translateButton.removeEventListener('click', () => {});
 
 // 鼠标离开翻译按钮时关闭翻译结果
 translateButton.addEventListener('mouseleave', () => {
     // 设置延时，让用户有时间移动到翻译框
     translateTimeout = setTimeout(() => {
-        if (loadingPopup) {
-            loadingPopup.remove();
-            loadingPopup = null;
-        }
+        clearLoadingPopup();
         
         // 只有当鼠标不在翻译框内时才关闭
         if (currentPopup && !currentPopup.matches(':hover')) {
@@ -464,8 +570,9 @@ document.addEventListener('mousedown', (e) => {
         return;
     }
     
-    // 点击其他地方才关闭
+    // 点击其他地方时清除所有弹窗
     translateButton.style.display = 'none';
+    clearLoadingPopup();
     if (currentPopup) {
         currentPopup.remove();
         currentPopup = null;
